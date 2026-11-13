@@ -69,6 +69,44 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+    # Worker menunggu backend sehat, yang berarti migrasi sudah selesai.
+    # node-pg-migrate memakai pg_try_advisory_lock dan langsung gagal bila dua
+    # proses bermigrasi bersamaan, jadi worker tidak ikut menjalankan migrasi.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health >/dev/null || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+      start_period: 10s
+
+  # Worker Email Selamat Datang. Skalakan dengan
+  # `docker compose up -d --scale worker=3`: semua replika membaca antrean yang
+  # sama dan setiap pesan hanya diterima satu replika. Tanpa kredensial
+  # Mailtrap di .env, email dicetak ke log (`docker compose logs -f worker`).
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: ["npm", "run", "worker", "--workspace", "backend"]
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgres://musicpedia:musicpedia@db:5432/musicpedia
+      AMQP_URL: amqp://guest:guest@rabbitmq:5672/
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/backend/node_modules
+      - /app/shared/node_modules
+      - /app/frontend/node_modules
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
 
   frontend:
     build:
