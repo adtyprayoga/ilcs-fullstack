@@ -7,6 +7,7 @@ Toko Lagu digital PT Musika Indonesia. Istilah domain ada di [GLOSSARY.md](GLOSS
 - Frontend: React, Vite, Tailwind CSS v4, React Router
 - Backend: Express, dijalankan langsung oleh Node dengan type stripping (tanpa build)
 - Database: PostgreSQL lewat `pg` tanpa ORM, migrasi dengan `node-pg-migrate`
+- Antrean: RabbitMQ (`amqplib`) untuk Email Selamat Datang, dikirim lewat SMTP sandbox Mailtrap (`nodemailer`)
 - `shared`: skema zod yang diimpor frontend dan backend
 - Tes: Vitest, Supertest, dan Testing Library
 
@@ -17,7 +18,7 @@ Prasyarat: Docker dan Docker Compose. Backend dan frontend berjalan di dalam con
 
 ```sh
 cp .env.example .env   # opsional, nilai bawaan sudah cocok dengan Docker Compose
-npm run dev            # PostgreSQL, backend (:3000), dan frontend (:5173) dalam satu perintah
+npm run dev            # PostgreSQL, RabbitMQ, backend (:3000), worker email, dan frontend (:5173)
 npm run seed           # Data Demo lengkap (lihat bagian berikut), di terminal lain
 ```
 
@@ -25,15 +26,26 @@ npm run seed           # Data Demo lengkap (lihat bagian berikut), di terminal l
 
 `npm test` dan `npm run seed` juga berjalan di dalam container. `npm run seed` membutuhkan stack yang sedang berjalan. Audio Data Demo dan unggahan Admin tersimpan di `./backend/audio` pada host.
 
-Bila sudah punya Node dan ffmpeg di host dan ingin menjalankan backend serta frontend di luar container, pakai `npm install` lalu `npm run dev:local`. Versi host memakai PostgreSQL dari Compose dan `FFMPEG_PATH` dari `.env`; seed gagal dengan pesan yang menyebut `FFMPEG_PATH` bila biner tidak bisa dijalankan. Audio tidak pernah di-commit ke repo.
+Bila sudah punya Node dan ffmpeg di host dan ingin menjalankan backend, worker email, serta frontend di luar container, pakai `npm install` lalu `npm run dev:local`. Versi host memakai PostgreSQL dan RabbitMQ dari Compose dan `FFMPEG_PATH` dari `.env`; seed gagal dengan pesan yang menyebut `FFMPEG_PATH` bila biner tidak bisa dijalankan. Audio tidak pernah di-commit ke repo.
 
 `dockscope` (antarmuka monitoring container) tidak ikut `npm run dev`. Jalankan dengan `docker compose --profile tools up -d dockscope`, lalu buka http://localhost:4681.
 
 ## Akun dan sesi
-- Registrasi hanya membuat Pelanggan. Admin tidak pernah dibuat lewat registrasi.
+- Registrasi hanya membuat Pelanggan. Admin tidak pernah dibuat lewat registrasi. Pelanggan baru menerima Email Selamat Datang (lihat bagian berikut).
 - Tabel `akun` menyimpan `nama` (teks, default kosong sampai Pelanggan mengisi profilnya sendiri). Kolom ini dipakai halaman profil Pelanggan dan area Admin untuk mencari serta mengubah data Pelanggan.
 - Sesi disimpan di tabel `sesi` PostgreSQL lewat cookie `musicpedia.sid` (`httpOnly`, `SameSite=Lax`, `Secure` bila `NODE_ENV=production`). Alasannya ada di [ADR 0003](docs/adr/0003-sesi-di-postgresql.md).
 - `SESSION_SECRET` wajib diisi di produksi, minimal 32 karakter. `ADMIN_PASSWORD` juga wajib diisi saat menjalankan seed di produksi.
+
+## Email Selamat Datang
+Registrasi menerbitkan pesan ke RabbitMQ lalu langsung menjawab `201`. Service `worker` mengambil pesan dari antrean `email` dan mengirim email. Desain, dedupe, dan jawaban "banyak consumer, templat yang sama" ada di [ADR 0005](docs/adr/0005-email-selamat-datang-lewat-rabbitmq.md).
+
+- Tanpa kredensial Mailtrap, worker hanya mencetak email ke log: `docker compose logs -f worker`.
+- Untuk melihat email di inbox uji, buat inbox di Mailtrap **Sandboxes**, salin kredensial SMTP dari tab **Integration**, lalu isi `MAILTRAP_SMTP_USER` dan `MAILTRAP_SMTP_PASS` di `.env`. Email masuk ke inbox sandbox, tidak pernah ke penerima sungguhan.
+- RabbitMQ UI ada di http://localhost:15673 (guest/guest). AMQP dipublikasikan di port host 5673; port host digeser agar tidak bentrok dengan RabbitMQ lain.
+- Jalankan beberapa worker sekaligus dengan `docker compose up -d --scale worker=3`. Semua replika membaca antrean yang sama, sehingga setiap Pelanggan tetap menerima satu email.
+- Kegagalan Mailtrap dicoba ulang setiap 10 detik, paling banyak 3 percobaan, lalu pesannya diparkir di antrean `email.gagal`. Baris `email_terkirim` berstatus `MENGIRIM` yang tertinggal menandai worker yang mati di tengah pengiriman.
+- Registrasi tetap berhasil bila RabbitMQ mati; kegagalan publish dicatat di log backend dan Pelanggan itu tidak menerima Email Selamat Datang.
+- Log pengiriman hanya memuat id Pelanggan, tidak pernah alamat email.
 
 ## Data Demo
 `npm run seed` idempoten: menjalankannya berulang kali tidak menggandakan akun, Genre, Lagu, Pembelian, maupun berkas audio. Seed melakukan lima langkah: Admin, Pelanggan, katalog, audio, lalu Pembelian.
@@ -93,7 +105,7 @@ Midtrans tidak bisa menjangkau `localhost`, jadi saat dev gunakan tunnel cloudfl
 URL `trycloudflare.com` berganti setiap kali tunnel dijalankan ulang, jadi perbarui Payment Notification URL bila perlu. Untuk webhook dari mesin lokal ini `MIDTRANS_PRODUCTION` harus `false`.
 
 ## Produksi dengan Docker Compose
-`docker-compose.prod.yml` menjalankan empat hal: PostgreSQL bervolume, backend Node 26 + ffmpeg, frontend hasil build Vite yang disajikan nginx, dan nginx sebagai reverse proxy `/api` sekaligus terminasi TLS.
+`docker-compose.prod.yml` menjalankan PostgreSQL bervolume, RabbitMQ bervolume, backend Node 26 + ffmpeg, worker Email Selamat Datang dari image backend yang sama, frontend hasil build Vite yang disajikan nginx, dan nginx sebagai reverse proxy `/api` sekaligus terminasi TLS. Worker menolak start bila `MAILTRAP_SMTP_USER`, `MAILTRAP_SMTP_PASS`, atau `APP_URL` kosong; isi juga `RABBITMQ_USER` dan `RABBITMQ_PASSWORD` di `.env.production`.
 
 - `web` hanya membuka port HTTP/HTTPS. Backend dan database tidak dipublikasikan ke host.
 - Image backend menjalankan migrasi lalu server produksi (`node backend/src/server.ts`), bukan mode dev. Healthcheck backend memanggil `/api/health`.

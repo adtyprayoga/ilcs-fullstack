@@ -7,10 +7,12 @@
     "start": "node --env-file-if-exists=../.env src/server.ts",
     "migrate": "node --env-file-if-exists=../.env src/migrate.ts",
     "seed": "node --env-file-if-exists=../.env src/seed.ts",
+    "worker": "node --env-file-if-exists=../.env --watch src/worker.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@musicpedia/shared": "*",
+    "amqplib": "^2.3.1",
     "bcryptjs": "^3.0.3",
     "connect-pg-simple": "^10.0.0",
     "exceljs": "^4.4.0",
@@ -18,8 +20,10 @@
     "express-session": "^1.19.0",
     "multer": "^2.5.0",
     "node-pg-migrate": "^8.0.0",
+    "nodemailer": "^10.5.0",
     "pdfkit": "^0.20.2",
-    "pg": "^8.16.0"
+    "pg": "^8.16.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/connect-pg-simple": "^7.0.3",

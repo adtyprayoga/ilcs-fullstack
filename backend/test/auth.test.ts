@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import request from "supertest";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.ts";
+import { penerbitNoop } from "../src/notifikasi/penerbit.ts";
 import { createTestContext } from "./support.ts";
 
 const kredensial = { email: "siti@example.com", password: "rahasia123" };
@@ -124,6 +125,7 @@ describe("Sesi Pelanggan", () => {
         secureCookies: true,
         sessionSecret: "rahasia-produksi-tes",
       },
+      penerbitEmail: penerbitNoop,
     });
 
     const res = await request(appProduksi)

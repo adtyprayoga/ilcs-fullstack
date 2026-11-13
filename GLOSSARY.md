@@ -12,6 +12,10 @@ _Avoid_: Guest, tamu, user
 Orang yang sudah registrasi dan dapat membeli serta mengunduh Lagu. Pelanggan dapat dinonaktifkan, tetapi tidak pernah dihapus.
 _Avoid_: Member, customer, user, akun
 
+**Email Selamat Datang**:
+Email yang dikirim satu kali kepada Pelanggan setelah registrasi berhasil. Admin dan Data Demo tidak menerimanya.
+_Avoid_: Welcome email, email konfirmasi, email verifikasi
+
 **Admin**:
 Pegawai PT Musika Indonesia yang mengelola katalog, data Pelanggan, dan Laporan Penjualan. Akunnya tidak dibuat lewat registrasi.
 _Avoid_: Operator, administrator sistem

@@ -19,6 +19,7 @@ import {
 import { createKeranjangRepository } from "./keranjang/repository.ts";
 import { createKeranjangService } from "./keranjang/service.ts";
 import { siapkanDirektoriAudio } from "./media/audio.ts";
+import type { PenerbitEmail } from "./notifikasi/penerbit.ts";
 import { createAuthMiddleware } from "./middleware/auth.ts";
 import {
   createMidtransGateway,
@@ -54,6 +55,7 @@ export interface AppDeps {
   pool: Pool;
   config: Config;
   paymentGateway?: PaymentGateway;
+  penerbitEmail: PenerbitEmail;
 }
 
 const handleError: ErrorRequestHandler = (error, _req, res, _next) => {
@@ -70,7 +72,12 @@ const handleError: ErrorRequestHandler = (error, _req, res, _next) => {
   res.status(500).json(body);
 };
 
-export function createApp({ pool, config, paymentGateway }: AppDeps) {
+export function createApp({
+  pool,
+  config,
+  paymentGateway,
+  penerbitEmail,
+}: AppDeps) {
   const app = express();
   siapkanDirektoriAudio(config.audioDir);
   if (config.secureCookies) {
@@ -80,7 +87,7 @@ export function createApp({ pool, config, paymentGateway }: AppDeps) {
 
   const akunRepo = createAkunRepository(pool);
   const pelangganRepo = createPelangganRepository(pool);
-  const authService = createAuthService(akunRepo);
+  const authService = createAuthService(akunRepo, penerbitEmail);
   const profilService = createProfilService(akunRepo);
   const pelangganService = createPelangganService(pelangganRepo);
   const authController = createAuthController({ authService });

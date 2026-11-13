@@ -17,6 +17,22 @@ services:
       timeout: 3s
       retries: 20
 
+  # Broker antrean Email Selamat Datang. UI manajemen di http://localhost:15673
+  # (guest/guest). Port host digeser (+1) seperti db agar tidak bentrok dengan
+  # RabbitMQ lain di mesin pengembang.
+  rabbitmq:
+    image: rabbitmq:4-management
+    ports:
+      - "5673:5672"
+      - "15673:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 10s
+      retries: 12
+
   # Dua service di bawah berbagi satu image pengembangan. Repo di-mount supaya
   # perubahan berkas langsung terlihat, sedangkan node_modules tetap milik image
   # (volume anonim, diperbarui oleh `-V` di npm run dev) karena biner native
@@ -39,6 +55,7 @@ services:
       FFMPEG_PATH: /usr/bin/ffmpeg
       # Dipakai helper tes untuk membaca durasi Trial.
       FFPROBE_PATH: /usr/bin/ffprobe
+      AMQP_URL: amqp://guest:guest@rabbitmq:5672/
     ports:
       - "3000:3000"
     volumes:
@@ -49,6 +66,46 @@ services:
       - /app/frontend/node_modules
     depends_on:
       db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    # Worker menunggu backend sehat, yang berarti migrasi sudah selesai.
+    # node-pg-migrate memakai pg_try_advisory_lock dan langsung gagal bila dua
+    # proses bermigrasi bersamaan, jadi worker tidak ikut menjalankan migrasi.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health >/dev/null || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+      start_period: 10s
+
+  # Worker Email Selamat Datang. Skalakan dengan
+  # `docker compose up -d --scale worker=3`: semua replika membaca antrean yang
+  # sama dan setiap pesan hanya diterima satu replika. Tanpa kredensial
+  # Mailtrap di .env, email dicetak ke log (`docker compose logs -f worker`).
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: ["npm", "run", "worker", "--workspace", "backend"]
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgres://musicpedia:musicpedia@db:5432/musicpedia
+      AMQP_URL: amqp://guest:guest@rabbitmq:5672/
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/backend/node_modules
+      - /app/shared/node_modules
+      - /app/frontend/node_modules
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      backend:
         condition: service_healthy
 
   frontend:
@@ -85,4 +142,5 @@ services:
 
 volumes:
   pgdata:
+  rabbitmq-data:
   dockscope-data:

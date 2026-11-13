@@ -1,6 +1,7 @@
 import type { LoginRequest, RegisterRequest } from "@musicpedia/shared";
 import type { Akun, AkunDenganPassword } from "../domain/akun.ts";
 import { AppError, isUniqueViolation } from "../errors.ts";
+import type { PenerbitEmail } from "../notifikasi/penerbit.ts";
 import { hashPassword, verifyPassword } from "../password.ts";
 import type { AkunRepository } from "../repositories/akun-repository.ts";
 
@@ -19,12 +20,16 @@ export interface AuthService {
   login(input: LoginRequest): Promise<Akun>;
 }
 
-export function createAuthService(repo: AkunRepository): AuthService {
+export function createAuthService(
+  repo: AkunRepository,
+  penerbitEmail: PenerbitEmail,
+): AuthService {
   return {
     async register({ email, password }) {
       const passwordHash = await hashPassword(password);
+      let akun: Akun;
       try {
-        return await repo.createPelanggan({ email, passwordHash });
+        akun = await repo.createPelanggan({ email, passwordHash });
       } catch (error) {
         if (isUniqueViolation(error)) {
           throw new AppError(
@@ -35,6 +40,10 @@ export function createAuthService(repo: AkunRepository): AuthService {
         }
         throw error;
       }
+      // Email unik, jadi baris ini hanya tercapai sekali per akun. Penerbit
+      // tidak pernah melempar: registrasi tetap berhasil saat broker mati.
+      await penerbitEmail.selamatDatang(akun);
+      return akun;
     },
 
     async login({ email, password }) {
