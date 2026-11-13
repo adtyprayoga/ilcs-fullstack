@@ -1,6 +1,6 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadConfig } from "../src/config.ts";
+import { loadConfig, periksaKonfigurasiWorker } from "../src/config.ts";
 
 describe("konfigurasi produksi", () => {
   const rahasia = "rahasia-produksi-yang-panjang-dan-acak-123456";
@@ -56,3 +56,57 @@ describe("konfigurasi produksi", () => {
     expect(() => loadConfig({ PORT: "0" })).toThrow(/PORT/);
   });
 });
+
+describe("konfigurasi Email Selamat Datang", () => {
+  const produksi = {
+    NODE_ENV: "production",
+    DATABASE_URL: "postgres://db/app",
+    SESSION_SECRET: "rahasia-produksi-yang-panjang-dan-acak-123456",
+  };
+
+  it("memberi nilai bawaan pengembangan untuk broker, Mailtrap, dan tautan aplikasi", () => {
+    const config = loadConfig({ NODE_ENV: "development" });
+
+    expect(config).toMatchObject({
+      amqpUrl: "amqp://guest:guest@localhost:5673/",
+      mailtrapSmtpHost: "sandbox.smtp.mailtrap.io",
+      mailtrapSmtpPort: 2525,
+      mailtrapSmtpUser: "",
+      mailtrapSmtpPass: "",
+      emailPengirim: "MusicPedia <no-reply@musicpedia.id>",
+      appUrl: "http://localhost:5173",
+    });
+    // Tanpa kredensial di pengembangan, worker memakai pengirim konsol.
+    expect(() => periksaKonfigurasiWorker(config)).not.toThrow();
+  });
+
+  it("worker produksi mewajibkan kredensial Mailtrap dan APP_URL", () => {
+    expect(() => periksaKonfigurasiWorker(loadConfig(produksi))).toThrow(
+      /MAILTRAP_SMTP_USER/,
+    );
+    expect(() =>
+      periksaKonfigurasiWorker(
+        loadConfig({
+          ...produksi,
+          MAILTRAP_SMTP_USER: "user",
+          MAILTRAP_SMTP_PASS: "pass",
+        }),
+      ),
+    ).toThrow(/APP_URL/);
+    expect(() =>
+      periksaKonfigurasiWorker(
+        loadConfig({
+          ...produksi,
+          MAILTRAP_SMTP_USER: "user",
+          MAILTRAP_SMTP_PASS: "pass",
+          APP_URL: "https://musicpedia.id",
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  it("backend produksi tidak membutuhkan kredensial Mailtrap", () => {
+    expect(() => loadConfig(produksi)).not.toThrow();
+  });
+});
+

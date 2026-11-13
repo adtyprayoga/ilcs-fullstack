@@ -13,6 +13,13 @@ export interface Config {
   midtransServerKey: string;
   midtransClientKey: string;
   midtransProduction: boolean;
+  amqpUrl: string;
+  mailtrapSmtpHost: string;
+  mailtrapSmtpPort: number;
+  mailtrapSmtpUser: string;
+  mailtrapSmtpPass: string;
+  emailPengirim: string;
+  appUrl: string;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -55,5 +62,40 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     midtransServerKey: env.MIDTRANS_SERVER_KEY ?? "",
     midtransClientKey: env.MIDTRANS_CLIENT_KEY ?? "",
     midtransProduction: env.MIDTRANS_PRODUCTION === "true",
+    amqpUrl: env.AMQP_URL ?? "amqp://guest:guest@localhost:5673/",
+    mailtrapSmtpHost: env.MAILTRAP_SMTP_HOST ?? "sandbox.smtp.mailtrap.io",
+    mailtrapSmtpPort: env.MAILTRAP_SMTP_PORT
+      ? Number(env.MAILTRAP_SMTP_PORT)
+      : 2525,
+    mailtrapSmtpUser: env.MAILTRAP_SMTP_USER ?? "",
+    mailtrapSmtpPass: env.MAILTRAP_SMTP_PASS ?? "",
+    emailPengirim: env.EMAIL_PENGIRIM ?? "MusicPedia <no-reply@musicpedia.id>",
+    // Diwajibkan di produksi oleh worker, satu-satunya pemakainya.
+    appUrl: env.APP_URL ?? (isProduction ? "" : "http://localhost:5173"),
   };
+}
+
+/**
+ * Pemeriksaan tambahan untuk worker email. Backend tidak mengirim email, jadi
+ * kredensial Mailtrap dan APP_URL hanya diwajibkan saat worker start di
+ * produksi. Di pengembangan, kredensial kosong berarti email dicetak ke log.
+ */
+export function kredensialMailtrapTerisi(
+  config: Pick<Config, "mailtrapSmtpUser" | "mailtrapSmtpPass">,
+): boolean {
+  return Boolean(config.mailtrapSmtpUser && config.mailtrapSmtpPass);
+}
+
+export function periksaKonfigurasiWorker(config: Config): void {
+  if (config.nodeEnv !== "production") return;
+  if (!kredensialMailtrapTerisi(config)) {
+    throw new Error(
+      "MAILTRAP_SMTP_USER dan MAILTRAP_SMTP_PASS wajib diisi untuk worker email di produksi.",
+    );
+  }
+  if (!config.appUrl) {
+    throw new Error(
+      "APP_URL wajib diisi untuk worker email di produksi (tautan di Email Selamat Datang).",
+    );
+  }
 }

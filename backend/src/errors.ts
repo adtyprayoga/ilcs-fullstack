@@ -27,3 +27,8 @@ export function isForeignKeyViolation(error: unknown): boolean {
     (error as { code?: unknown }).code === "23503"
   );
 }
+
+/** Pesan satu baris dari nilai apa pun yang dilempar. */
+export function pesanError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
